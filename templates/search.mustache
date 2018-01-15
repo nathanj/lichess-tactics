@@ -1,0 +1,34 @@
+{{<super}}
+
+{{$additional_head}}
+<link rel='stylesheet' href='css/chessboard-0.3.0.css'/>
+<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha256-k2WSCIexGzOj3Euiig+TlR8gA0EmPjuc79OEeY5L45g=" crossorigin="anonymous"></script>
+<script src='js/chessboard-0.3.0.js'></script>
+{{/additional_head}}
+
+{{$content}}
+<p>Of your last {{num_games}} games, {{num_analyzed_games}} games had
+computer analysis, and I found {{num_tactics}} tactics that you missed.
+Click on the board to view the solution.</p>
+
+{{#boards}}
+<div style='float: left; width: 400px; margin-right: 20px; margin-bottom: 20px;'>
+	<a href='https://www.lichess.org/analysis/{{fen_link}}'>
+		<div id='board{{id}}' style="width: 100%"></div>
+	</a>
+</div>
+<script lang='text/javascript'>
+	var cfg = {
+		orientation: '{{orientation}}',
+		showNotation: false,
+		position: '{{fen}}'
+	};
+ChessBoard('board{{id}}', cfg);
+var b = $('#board{{id}}')
+b.find('.square-{{move_source}}').addClass('highlight1-32417');
+b.find('.square-{{move_destination}}').addClass('highlight1-32417');
+</script>
+{{/boards}}
+{{/content}}
+
+{{/super}}
