@@ -29,10 +29,14 @@ class EvalDeserializer : JsonDeserializer<Eval> {
     }
 }
 
+data class Player(
+        val userId: String
+)
+
 data class Game(
         val id: String,
         val moves: String,
-        val color: String,
+        val players: Map<String, Player>,
         val analysis: List<Eval>?
 )
 
@@ -62,7 +66,7 @@ fun findMissedTactics(eval: List<Eval>): List<Int> {
                 Math.abs(delta) >= threshold &&
                 Math.abs(delta2) >= threshold2 &&
                 delta.sign != delta2.sign) {
-            //println("ei=${eval[i].eval} ei1=${eval[i + 1].eval} ei2=${eval[i + 2].eval} delta=$delta delta2=$delta2")
+            //println("turn=$i ei=${eval[i].eval} ei1=${eval[i + 1].eval} ei2=${eval[i + 2].eval} delta=$delta delta2=$delta2")
             blunders.add(i)
         }
     }
@@ -74,7 +78,7 @@ private val rules = context.getBean(ChessRules::class.java)
 private val marshaller = context.getBean(PgnMarshaller::class.java)
 private val fenMarshaller = FenMarshallerImpl()
 
-fun generateBoards(games: LichessGames): Map<String, Any> {
+fun generateBoards(games: LichessGames, user: String): Map<String, Any> {
     val boards = ArrayList<Map<String, String>>()
     val map = HashMap<String, Any>()
 
@@ -85,6 +89,7 @@ fun generateBoards(games: LichessGames): Map<String, Any> {
     analyzedGames.forEach { game ->
         val blunders = findMissedTactics(game.analysis!!)
         var position = rules.initialPosition
+        val isWhite = game.players["white"]!!.userId == user
 
         game.moves.split(" ").forEachIndexed { i, move ->
             val path = marshaller.convertPgnToMove(position, move)
@@ -97,9 +102,10 @@ fun generateBoards(games: LichessGames): Map<String, Any> {
             afterMove.nextPlayerTurn()
             position = afterMove
 
-            if (blunders.contains(i - 1) &&
-                    ((game.color == "white" && i % 2 == 0) ||
-                            (game.color == "black" && i % 2 == 1))) {
+            val isMyBlunder = ((isWhite && i % 2 == 1) ||
+                    (!isWhite && i % 2 == 0))
+
+            if (blunders.contains(i - 1) && isMyBlunder) {
                 val fen = fenMarshaller.convertPositionToString(position)
 
                 boards.add(
@@ -147,10 +153,10 @@ object Main {
                 ctx.redirect("/")
             } else {
                 try {
-                    val url = "https://lichess.org/api/user/$q/games?nb=50&page=1&with_analysis=1&with_moves=1"
+                    val url = "https://lichess.org/api/user/$q/games?nb=25&page=1&with_analysis=1&with_moves=1"
                     val (_, _, result) = url.httpGet().responseString()
                     val games = gson.fromJson(result.get(), LichessGames::class.java)
-                    val data = generateBoards(games)
+                    val data = generateBoards(games, q)
                     if (type == "txt") {
                         ctx.renderMustache("templates/search-txt.mustache", data)
                     } else {
