@@ -91,32 +91,36 @@ fun generateBoards(games: LichessGames, user: String): Map<String, Any> {
         var position = rules.initialPosition
         val isWhite = game.players["white"]!!.userId == user
 
-        game.moves.split(" ").forEachIndexed { i, move ->
-            val path = marshaller.convertPgnToMove(position, move)
-            val updates = rules.getUpdatesForMove(position, path)
-            val afterMove = ChessBoardModel()
-            afterMove.setPosition(position)
-            for (update in updates) {
-                update.apply(afterMove)
+        try {
+            game.moves.split(" ").forEachIndexed { i, move ->
+                val path = marshaller.convertPgnToMove(position, move)
+                val updates = rules.getUpdatesForMove(position, path)
+                val afterMove = ChessBoardModel()
+                afterMove.setPosition(position)
+                for (update in updates) {
+                    update.apply(afterMove)
+                }
+                afterMove.nextPlayerTurn()
+                position = afterMove
+
+                val isMyBlunder = ((isWhite && i % 2 == 1) ||
+                        (!isWhite && i % 2 == 0))
+
+                if (blunders.contains(i - 1) && isMyBlunder) {
+                    val fen = fenMarshaller.convertPositionToString(position)
+
+                    boards.add(
+                            mapOf("game_id" to game.id,
+                                    "fen" to fen,
+                                    "fen_link" to fen.replace(' ', '_'),
+                                    "orientation" to position.nextPlayerTurn.fullName,
+                                    "move_source" to path.source.pgnCoordinates,
+                                    "move_destination" to path.destination.pgnCoordinates,
+                                    "id" to "${game.id}_${i}"))
+                }
             }
-            afterMove.nextPlayerTurn()
-            position = afterMove
-
-            val isMyBlunder = ((isWhite && i % 2 == 1) ||
-                    (!isWhite && i % 2 == 0))
-
-            if (blunders.contains(i - 1) && isMyBlunder) {
-                val fen = fenMarshaller.convertPositionToString(position)
-
-                boards.add(
-                        mapOf("game_id" to game.id,
-                                "fen" to fen,
-                                "fen_link" to fen.replace(' ', '_'),
-                                "orientation" to position.nextPlayerTurn.fullName,
-                                "move_source" to path.source.pgnCoordinates,
-                                "move_destination" to path.destination.pgnCoordinates,
-                                "id" to "${game.id}_${i}"))
-            }
+        } catch (ex: Exception) {
+            println(ex)
         }
 
     }
