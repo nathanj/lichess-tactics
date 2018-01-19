@@ -7,15 +7,16 @@
 {{/additional_head}}
 
 {{$content}}
-<p>Of your last {{num_games}} games, {{num_analyzed_games}} games had
-computer analysis, and I found {{num_tactics}} tactics that you missed.
-Click on the board to view the solution.</p>
+<p>Of your last {{num_games}} games, {{num_analyzed_games}} games matched your
+filter and had computer analysis, and I found {{num_tactics}} tactics that you
+missed.  Click on the board to view the solution.</p>
 
 {{#boards}}
-<div style='float: left; width: 400px; margin-right: 20px; margin-bottom: 20px;'>
+<div style='text-align: center; float: left; width: 400px; margin-right: 20px; margin-bottom: 20px;'>
 	<a href='https://www.lichess.org/analysis/{{fen_link}}'>
 		<div id='board{{id}}' style="width: 100%"></div>
 	</a>
+    <a href="https://www.lichess.org/{{game_id}}">Game {{game_id}} - {{move_display}}</a>
 </div>
 <script lang='text/javascript'>
 	var cfg = {

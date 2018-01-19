@@ -14,6 +14,7 @@ import org.alcibiade.chess.rules.ChessRules
 import org.alcibiade.chess.rules.ChessRulesImpl
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import java.lang.reflect.Type
+import java.net.URLEncoder
 import kotlin.math.sign
 
 data class Eval(
@@ -35,6 +36,7 @@ data class Player(
 
 data class Game(
         val id: String,
+        val speed: String,
         val moves: String,
         val players: Map<String, Player>,
         val analysis: List<Eval>?
@@ -78,15 +80,17 @@ private val rules = context.getBean(ChessRules::class.java)
 private val marshaller = context.getBean(PgnMarshaller::class.java)
 private val fenMarshaller = FenMarshallerImpl()
 
-fun generateBoards(games: LichessGames, user: String): Map<String, Any> {
+fun generateBoards(games: LichessGames, user: String, time: Array<String>): Map<String, Any> {
     val boards = ArrayList<Map<String, String>>()
     val map = HashMap<String, Any>()
 
     map.put("num_games", games.currentPageResults.size)
-    val analyzedGames = games.currentPageResults.filter { it.analysis != null }
-    map.put("num_analyzed_games", analyzedGames.size)
+    val filteredGames = games.currentPageResults
+            .filter { it.analysis != null }
+            .filter { time.contains(it.speed) }
+    map.put("num_analyzed_games", filteredGames.size)
 
-    analyzedGames.forEach { game ->
+    filteredGames.forEach { game ->
         val blunders = findMissedTactics(game.analysis!!)
         var position = rules.initialPosition
         val isWhite = game.players["white"]!!.userId == user
@@ -109,11 +113,14 @@ fun generateBoards(games: LichessGames, user: String): Map<String, Any> {
                 if (blunders.contains(i - 1) && isMyBlunder) {
                     val fen = fenMarshaller.convertPositionToString(position)
 
+                    val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else ""} $move"
+
                     boards.add(
                             mapOf("game_id" to game.id,
                                     "fen" to fen,
                                     "fen_link" to fen.replace(' ', '_'),
                                     "orientation" to position.nextPlayerTurn.fullName,
+                                    "move_display" to moveDisplay,
                                     "move_source" to path.source.pgnCoordinates,
                                     "move_destination" to path.destination.pgnCoordinates,
                                     "id" to "${game.id}_${i}"))
@@ -152,15 +159,18 @@ object Main {
 
         app.get("/search") { ctx ->
             val q = ctx.queryParam("q") ?: ""
+            val nb = ctx.queryParam("nb") ?: "25"
             val type = ctx.queryParam("type") ?: ""
+            val time = ctx.queryParams("time") ?: arrayOf("blitz", "rapid", "classical", "correspondence")
             if (q.isEmpty()) {
                 ctx.redirect("/")
             } else {
                 try {
-                    val url = "https://lichess.org/api/user/$q/games?nb=25&page=1&with_analysis=1&with_moves=1"
+                    val n = Math.min(nb.toIntOrNull() ?: 25, 100)
+                    val url = "https://lichess.org/api/user/${URLEncoder.encode(q.trim(), "UTF-8")}/games?nb=$n&page=1&with_analysis=1&with_moves=1"
                     val (_, _, result) = url.httpGet().responseString()
                     val games = gson.fromJson(result.get(), LichessGames::class.java)
-                    val data = generateBoards(games, q)
+                    val data = generateBoards(games, q, time)
                     if (type == "txt") {
                         ctx.renderMustache("templates/search-txt.mustache", data)
                     } else {

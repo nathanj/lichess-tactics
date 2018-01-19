@@ -1,4 +1,5 @@
 body {
+  font: sans-serif;
   margin: 40px auto;
   line-height: 1.6;
   font-size: 18px;
@@ -9,4 +10,8 @@ body {
 .footer {
   padding-top: 30px;
   font-size: 70%;
+}
+
+a {
+  color: #c61;
 }
