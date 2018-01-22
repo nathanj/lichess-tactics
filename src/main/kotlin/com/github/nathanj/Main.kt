@@ -59,10 +59,10 @@ fun findBlunders(eval: List<Eval>): List<Int> {
 fun findMissedTactics(eval: List<Eval>): List<Int> {
     val blunders = ArrayList<Int>()
     val threshold = 300
-    val threshold2 = threshold * 0.66
     repeat(eval.size - 2) { i ->
         val delta = eval[i + 1].eval - eval[i].eval
         val delta2 = eval[i + 2].eval - eval[i + 1].eval
+        val threshold2 = Math.abs(delta) * 0.66
         if (eval[i + 1].eval.sign == (if (i % 2 == 0) 1 else -1) &&
                 Math.abs(eval[i + 1].eval) >= threshold &&
                 Math.abs(delta) >= threshold &&
