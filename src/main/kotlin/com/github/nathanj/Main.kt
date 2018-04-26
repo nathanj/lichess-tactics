@@ -123,6 +123,7 @@ fun generateBoards(games: LichessGames, user: String, time: Array<String>): Map<
         val blunders = findMissedTactics(game, game.analysis!!)
         var position = rules.initialPosition
         val isWhite = game.players["white"]!!.userId == user
+        val color = if (isWhite) "white" else "black"
 
         try {
             game.moves.split(" ").forEachIndexed { i, move ->
@@ -149,6 +150,8 @@ fun generateBoards(games: LichessGames, user: String, time: Array<String>): Map<
                                     "fen" to fen,
                                     "fen_link" to fen.replace(' ', '_'),
                                     "orientation" to position.nextPlayerTurn.fullName,
+                                    "url" to "https://lichess.org/${game.id}/$color#${i + 1}",
+                                    "move_number" to "${i + 1}",
                                     "move_display" to moveDisplay,
                                     "move_source" to path.source.pgnCoordinates,
                                     "move_destination" to path.destination.pgnCoordinates,
