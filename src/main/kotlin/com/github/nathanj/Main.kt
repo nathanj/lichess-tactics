@@ -15,6 +15,7 @@ import org.alcibiade.chess.rules.ChessRulesImpl
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import java.lang.reflect.Type
 import java.net.URLEncoder
+import kotlin.math.absoluteValue
 import kotlin.math.sign
 
 data class Eval(
@@ -46,6 +47,13 @@ data class LichessGames(
         val currentPageResults: List<Game>
 )
 
+fun Int.absMax(max: Int): Int {
+    if (this.absoluteValue > max) {
+        return this.sign * max
+    }
+    return this
+}
+
 fun findBlunders(eval: List<Eval>): List<Int> {
     val blunders = ArrayList<Int>()
     eval.zipWithNext().forEachIndexed { index, (e1, e2) ->
@@ -56,19 +64,40 @@ fun findBlunders(eval: List<Eval>): List<Int> {
     return blunders
 }
 
-fun findMissedTactics(eval: List<Eval>): List<Int> {
+/** Eval changes greater than this should be noted. */
+const val BLUNDER_THRESHOLD = 300
+
+/** Eval changes after this should not be shown since the position is completely winning. */
+const val WINNING_THRESHOLD = 2000
+
+/**
+ * Find positions where a large swing in evaluation failed to be taken advantage of.
+ */
+fun findMissedTactics(game: Game, eval: List<Eval>): List<Int> {
     val blunders = ArrayList<Int>()
-    val threshold = 300
+    //if (!game.id.startsWith("UdB"))
+    //    return blunders
     repeat(eval.size - 2) { i ->
-        val delta = eval[i + 1].eval - eval[i].eval
-        val delta2 = eval[i + 2].eval - eval[i + 1].eval
+        val ev = eval[i].eval.absMax(WINNING_THRESHOLD)
+        val ev1 = eval[i + 1].eval.absMax(WINNING_THRESHOLD)
+        val ev2 = eval[i + 2].eval.absMax(WINNING_THRESHOLD)
+        val delta = ev1 - ev
+        val delta2 = ev2 - ev1
         val threshold2 = Math.abs(delta) * 0.66
-        if (eval[i + 1].eval.sign == (if (i % 2 == 0) 1 else -1) &&
-                Math.abs(eval[i + 1].eval) >= threshold &&
-                Math.abs(delta) >= threshold &&
+        //val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else "   "}"
+        //println("id=${game.id} move=$moveDisplay ev=$ev ev1=$ev1 ev2=$ev2 delta=$delta delta2=$delta2")
+        if (
+        // Make sure the position is winning for us and not the opponent.
+        eval[i + 1].eval.sign == (if (i % 2 == 0) 1 else -1) &&
+                // If the position has gone to a winning position.
+                Math.abs(eval[i + 1].eval) >= BLUNDER_THRESHOLD &&
+                // If the move was what brought it to the winning position.
+                Math.abs(delta) >= BLUNDER_THRESHOLD &&
+                // If the next move failed to take advantage of the position.
                 Math.abs(delta2) >= threshold2 &&
-                delta.sign != delta2.sign) {
-            //println("turn=$i ei=${eval[i].eval} ei1=${eval[i + 1].eval} ei2=${eval[i + 2].eval} delta=$delta delta2=$delta2")
+                delta.sign != delta2.sign
+                ) {
+            //println("Next move is missed tactic ->")
             blunders.add(i)
         }
     }
@@ -91,7 +120,7 @@ fun generateBoards(games: LichessGames, user: String, time: Array<String>): Map<
     map.put("num_analyzed_games", filteredGames.size)
 
     filteredGames.forEach { game ->
-        val blunders = findMissedTactics(game.analysis!!)
+        val blunders = findMissedTactics(game, game.analysis!!)
         var position = rules.initialPosition
         val isWhite = game.players["white"]!!.userId == user
 
