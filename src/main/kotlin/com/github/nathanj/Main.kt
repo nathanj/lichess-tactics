@@ -88,13 +88,15 @@ fun findMissedTactics(game: Game, eval: List<Eval>): List<Int> {
         //println("id=${game.id} move=$moveDisplay ev=$ev ev1=$ev1 ev2=$ev2 delta=$delta delta2=$delta2")
         if (
         // Make sure the position is winning for us and not the opponent.
-        eval[i + 1].eval.sign == (if (i % 2 == 0) 1 else -1) &&
+        ev1.sign == (if (i % 2 == 0) 1 else -1) &&
                 // If the position has gone to a winning position.
                 Math.abs(eval[i + 1].eval) >= BLUNDER_THRESHOLD &&
                 // If the move was what brought it to the winning position.
                 Math.abs(delta) >= BLUNDER_THRESHOLD &&
                 // If the next move failed to take advantage of the position.
                 Math.abs(delta2) >= threshold2 &&
+                // Remove small relative differences (i.e. do not show 7.0 -> 10.0 eval changes)
+                Math.abs(delta) * 2 > Math.abs(ev1) &&
                 delta.sign != delta2.sign
                 ) {
             //println("Next move is missed tactic ->")
