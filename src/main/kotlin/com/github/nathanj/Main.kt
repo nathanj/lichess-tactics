@@ -65,7 +65,7 @@ fun findBlunders(eval: List<Eval>): List<Int> {
 }
 
 /** Eval changes greater than this should be noted. */
-const val BLUNDER_THRESHOLD = 300
+const val BLUNDER_THRESHOLD = 250
 
 /** Eval changes after this should not be shown since the position is completely winning. */
 const val WINNING_THRESHOLD = 2000
