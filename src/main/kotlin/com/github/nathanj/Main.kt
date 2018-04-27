@@ -3,9 +3,13 @@
 package com.github.nathanj
 
 import com.github.kittinunf.fuel.httpGet
-import com.google.gson.*
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonDeserializationContext
+import com.google.gson.JsonDeserializer
+import com.google.gson.JsonElement
 import io.javalin.Javalin
 import io.javalin.embeddedserver.Location
+import mu.KotlinLogging
 import org.alcibiade.chess.model.ChessBoardModel
 import org.alcibiade.chess.persistence.FenMarshallerImpl
 import org.alcibiade.chess.persistence.PgnMarshaller
@@ -17,6 +21,8 @@ import java.lang.reflect.Type
 import java.net.URLEncoder
 import kotlin.math.absoluteValue
 import kotlin.math.sign
+
+private val logger = KotlinLogging.logger {}
 
 data class Eval(
         val eval: Int
@@ -75,8 +81,6 @@ const val WINNING_THRESHOLD = 2000
  */
 fun findMissedTactics(game: Game, eval: List<Eval>): List<Int> {
     val blunders = ArrayList<Int>()
-    //if (!game.id.startsWith("UdB"))
-    //    return blunders
     repeat(eval.size - 2) { i ->
         val ev = eval[i].eval.absMax(WINNING_THRESHOLD)
         val ev1 = eval[i + 1].eval.absMax(WINNING_THRESHOLD)
@@ -84,8 +88,10 @@ fun findMissedTactics(game: Game, eval: List<Eval>): List<Int> {
         val delta = ev1 - ev
         val delta2 = ev2 - ev1
         val threshold2 = Math.abs(delta) * 0.66
-        //val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else "   "}"
-        //println("id=${game.id} move=$moveDisplay ev=$ev ev1=$ev1 ev2=$ev2 delta=$delta delta2=$delta2")
+        logger.debug {
+            val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else "   "}"
+            "id=${game.id} move=$moveDisplay ev=$ev ev1=$ev1 ev2=$ev2 delta=$delta delta2=$delta2"
+        }
         if (
         // Make sure the position is winning for us and not the opponent.
         ev1.sign == (if (i % 2 == 0) 1 else -1) &&
@@ -99,7 +105,7 @@ fun findMissedTactics(game: Game, eval: List<Eval>): List<Int> {
                 Math.abs(delta) * 2 > Math.abs(ev1) &&
                 delta.sign != delta2.sign
                 ) {
-            //println("Next move is missed tactic ->")
+            logger.debug { "Next move is missed tactic ->" }
             blunders.add(i)
         }
     }
@@ -181,7 +187,6 @@ object Main {
         val builder = GsonBuilder()
         builder.registerTypeAdapter(Eval::class.java, EvalDeserializer())
         val gson = builder.create()
-
 
         val app = Javalin.create()
         app.port(7000)
