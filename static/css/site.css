@@ -15,3 +15,11 @@ body {
 a {
   color: #c61;
 }
+
+.myCoolButton {
+  background-color: #c61;
+}
+
+nav {
+	position: absolute;
+}

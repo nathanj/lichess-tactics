@@ -1,0 +1,49 @@
+<script lang='text/javascript'>
+var puzzles = {};
+$(window).resize(function() {
+  for (id in puzzles) {
+    puzzles[id].resize();
+  }
+});
+</script>
+
+{{^boards}}
+    <p>No missed tactics found. You either have no computer analysed games, or you are Magnus Carlsen.</p>
+{{/boards}}
+
+<div class="flex one two-600 three-1000">
+    {{#boards}}
+        <div style="text-align: center">
+            <a href="{{url}}">
+                <div id='board{{id}}' style="width: 90%"></div>
+            </a>
+            <a href="{{url}}">Game {{game_id}} - {{move_display}}</a>
+            <!--
+            <br />
+            <a href="vote?id={{id}}&dir=up" title="This puzzle is good and interesting."><i class="fas fa-arrow-up"></i></a>
+            {{votes}}
+            <a href="vote?id={{id}}&dir=down" title="This puzzle is bad or boring."><i class="fas fa-arrow-down"></i></a>
+            -->
+        </div>
+        <script lang='text/javascript'>
+	var cfg = {
+		orientation: '{{orientation}}',
+		showNotation: false,
+		position: '{{fen}}'
+	};
+
+var puzzle = {}
+puzzle.id = "{{id}}";
+puzzle.board = ChessBoard('board{{id}}', cfg);
+puzzle.div = $('#board{{id}}')
+puzzle.resize = function() {
+  this.board.resize();
+  this.div.find('.square-{{move_source}}').addClass('highlight1-32417');
+  this.div.find('.square-{{move_destination}}').addClass('highlight1-32417');
+}
+puzzle.resize();
+puzzles[puzzle.id] = puzzle;
+</script>
+    {{/boards}}
+</div>
+

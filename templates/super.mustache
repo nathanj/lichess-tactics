@@ -2,11 +2,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel='stylesheet' href='css/site.css?v=2'/>
+    <link rel='stylesheet' href='css/picnic.min.css?v=3'/>
+    <link rel='stylesheet' href='css/site.css?v=3'/>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+
+    <link rel='stylesheet' href='css/chessboard-0.3.0.css'/>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha256-k2WSCIexGzOj3Euiig+TlR8gA0EmPjuc79OEeY5L45g=" crossorigin="anonymous"></script>
+    <script src='js/chessboard-0.3.0.js'></script>
+
     <title>Find Missed Lichess Tactics</title>
 {{$additional_head}}{{/additional_head}}
 </head>
 <body>
+
+
+    <nav class="demo">
+      <a href="/" class="brand">
+        <span>Missed Lichess Tactics</span>
+      </a>
+
+      <!--
+      <input id="bmenub" type="checkbox" class="show">
+      <label for="bmenub" class="burger pseudo button">&#8801;</label>
+
+      <div class="menu">
+	      <a href="/" class="pseudo button">Latest Puzzles</a>
+          {{#loggedIn}}
+              <span>Hello {{userId}}!</span>
+	      <a href="/mine" class="pseudo button">My Puzzles</a>
+              <a href="/logout" class="pseudo button myCoolButton"><i class="fas fa-sign-out-alt"></i> Logout</a>
+          {{/loggedIn}}
+          {{^loggedIn}}
+              <a href="/login" class="button myCoolButton"><i class="fas fa-user"></i> Login via Lichess</a>
+          {{/loggedIn}}
+      </div>
+      -->
+    </nav>
+
+    <br/>
+
 
 {{$content}}{{/content}}
 

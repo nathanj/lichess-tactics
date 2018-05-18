@@ -7,29 +7,9 @@
 {{/additional_head}}
 
 {{$content}}
-<p>Of your last {{num_games}} games, {{num_analyzed_games}} games matched your
-filter and had computer analysis, and I found {{num_tactics}} tactics that you
-missed.  Click on the board to view the solution.</p>
 
-{{#boards}}
-<div style='text-align: center; float: left; width: 400px; margin-right: 20px; margin-bottom: 20px;'>
-	<a href="{{url}}">
-		<div id='board{{id}}' style="width: 100%"></div>
-	</a>
-    <a href="{{url}}">Game {{game_id}} - {{move_display}}</a>
-</div>
-<script lang='text/javascript'>
-	var cfg = {
-		orientation: '{{orientation}}',
-		showNotation: false,
-		position: '{{fen}}'
-	};
-ChessBoard('board{{id}}', cfg);
-var b = $('#board{{id}}')
-b.find('.square-{{move_source}}').addClass('highlight1-32417');
-b.find('.square-{{move_destination}}').addClass('highlight1-32417');
-</script>
-{{/boards}}
+{{> puzzles}}
+
 {{/content}}
 
 {{/super}}

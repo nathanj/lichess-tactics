@@ -1,22 +1,27 @@
 {{<super}}
 
 {{$content}}
-<h1>Find Missed Lichess Tactics</h1>
 
-<form name="search" action="search" method="get">
-    Lichess Username: <input type="text" name="q"/>
-    <input type="submit" value="Go!"/><br/>
-    <label for="nb">Number of games: </label> <input type="text" id="nb" name="nb" value="25"/><br/>
-    <fieldset>
-        <legend>Games to analyze</legend>
-        <input id="ultraBullet" type="checkbox" name="time" value="ultraBullet"/><label for="ultraBullet">Ultrabullet</label> <br/>
-        <input id="bullet" type="checkbox" name="time" value="bullet"/><label for="bullet">Bullet</label> <br/>
-        <input id="blitz" type="checkbox" checked="checked" name="time" value="blitz"/><label for="blitz">Blitz</label> <br/>
-        <input id="rapid" type="checkbox" checked="checked" name="time" value="rapid"/><label for="rapid">Rapid</label> <br/>
-        <input id="classical" type="checkbox" checked="checked" name="time" value="classical"/><label for="classical">Classical</label> <br/>
-        <input id="correspondence" type="checkbox" checked="checked" name="time" value="correspondence"/><label for="correspondence">Correspondence</label> <br/>
-    </fieldset>
-</form>
+{{^loggedIn}}
+    <div>
+        <p>This website looks at your computer analysed games in Lichess and shows you positions where the opponent
+            blundered and you failed to take advantage of the situation.</p>
+
+        <p>Enter your Lichess username to generate your custom made puzzles from your own games!</p>
+        <form name="search" action="search" method="get">
+            Lichess Username: <input type="text" name="q"/>
+            <input type="submit" value="Go!"/>
+        </form>
+    </div>
+{{/loggedIn}}
+
+<h2>Latest Puzzles From Other Players</h2>
+
+<div>
+  <p>Can you find the winning move that was missed?</p>
+</div>
+
+{{> puzzles}}
 
 <div class="footer">
     <a href="https://github.com/nathanj/lichess-tactics">Source Code</a>
