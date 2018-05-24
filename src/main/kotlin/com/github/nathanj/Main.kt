@@ -302,7 +302,7 @@ object Main {
         }
 
         app.get("/search") { ctx ->
-            val userId = ctx.queryParam("q") ?: ""
+            val userId = ctx.queryParam("q")?.toLowerCase() ?: ""
             if (userId.isEmpty()) {
                 ctx.redirect("/")
                 throw HaltException("redirect")
