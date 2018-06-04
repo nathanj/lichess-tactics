@@ -119,7 +119,7 @@ fun generateBoards(games: List<LichessGame>, user: String) {
             .forEach { game ->
                 val blunders = findMissedTactics(game, game.analysis!!)
                 var position = rules.initialPosition
-                val isWhite = game.players["white"]!!.user.id == user
+                val isWhite = (game.players["white"]?.user?.id?.toLowerCase() ?: "") == user
                 val color = if (isWhite) "white" else "black"
 
                 try {
@@ -155,8 +155,8 @@ fun generateBoards(games: List<LichessGame>, user: String) {
                             try {
                                 dbPuzzles.save(Puzzle(
                                         _id = "${game.id}_${i}",
-                                        userIdWhite = game.players["white"]!!.user.id,
-                                        userIdBlack = game.players["black"]!!.user.id,
+                                        userIdWhite = game.players["white"]?.user?.id?.toLowerCase() ?: "",
+                                        userIdBlack = game.players["black"]?.user?.id?.toLowerCase() ?: "",
                                         gameId = game.id,
                                         fen = fen,
                                         orientation = position.nextPlayerTurn.fullName,
