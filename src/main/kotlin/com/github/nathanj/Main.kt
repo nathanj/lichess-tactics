@@ -338,8 +338,10 @@ object Main {
 
                         val url = "https://lichess.org/games/export/${URLEncoder.encode(userId, "UTF-8")}?max=20&analysed=true&moves=true&evals=true&perfType=blitz,rapid,classical,correspondence"
                         val get = url.httpGet()
-                        get.headers["accept"] = "application/x-ndjson"
-                        logger.debug { "fetchnew: starting fetch for user=$user url=$url" }
+                                .header("accept" to "application/x-ndjson")
+                                .timeout(60_000)
+                                .timeoutRead(60_000)
+                        logger.info { "fetchnew: starting fetch for user=$user url=$url" }
                         val (_, _, result) = get.responseString()
                         logger.info { "fetchnew: finished fetch for user=$user" }
                         logger.debug { "result=$result" }
