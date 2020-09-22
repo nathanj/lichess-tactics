@@ -1,22 +1,35 @@
-@file:Suppress("MemberVisibilityCanPrivate")
-
 package com.github.nathanj
 
-import com.github.kittinunf.fuel.httpGet
-import com.github.nathanj.lichess.*
-import com.github.nathanj.models.Game
-import com.github.nathanj.models.Puzzle
-import com.github.nathanj.models.User
-import com.github.nathanj.models.Vote
-import com.github.scribejava.core.builder.ServiceBuilder
-import com.github.scribejava.core.model.OAuth2AccessToken
-import com.github.scribejava.core.model.OAuthRequest
-import com.github.scribejava.core.model.Verb
+import com.github.nathanj.lichess.EvalDeserializer
+import com.github.nathanj.lichess.LichessEval
+import com.github.nathanj.lichess.LichessGame
+import com.github.nathanj.models.*
 import com.google.gson.GsonBuilder
-import io.javalin.Context
-import io.javalin.HaltException
-import io.javalin.Javalin
-import io.javalin.embeddedserver.Location
+import io.ktor.application.Application
+import io.ktor.application.call
+import io.ktor.application.install
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.readText
+import io.ktor.features.CallLogging
+import io.ktor.gson.gson
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.resources
+import io.ktor.http.content.static
+import io.ktor.mustache.Mustache
+import io.ktor.mustache.MustacheContent
+import io.ktor.request.path
+import io.ktor.response.respond
+import io.ktor.response.respondRedirect
+import io.ktor.routing.get
+import io.ktor.routing.routing
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
 import org.alcibiade.chess.model.ChessBoardModel
 import org.alcibiade.chess.persistence.FenMarshallerImpl
@@ -24,25 +37,19 @@ import org.alcibiade.chess.persistence.PgnMarshaller
 import org.alcibiade.chess.persistence.PgnMarshallerImpl
 import org.alcibiade.chess.rules.ChessRules
 import org.alcibiade.chess.rules.ChessRulesImpl
-import org.litote.kmongo.*
-import org.litote.kmongo.MongoOperator.*
+import org.flywaydb.core.Flyway
+import org.jdbi.v3.core.Jdbi
+import org.jdbi.v3.sqlobject.kotlin.onDemand
+import org.slf4j.event.Level
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import java.net.URLEncoder
 import java.time.Instant
-import java.time.LocalTime
 import java.util.*
-import kotlin.concurrent.thread
+import kotlin.math.abs
 import kotlin.math.absoluteValue
 import kotlin.math.sign
 
 private val logger = KotlinLogging.logger {}
-
-val client = KMongo.createClient()
-val database = client.getDatabase("test")!!
-val dbGames = database.getCollection<Game>()
-val dbPuzzles = database.getCollection<Puzzle>()
-val dbUsers = database.getCollection<User>()
-val dbVotes = database.getCollection<Vote>()
 
 fun Int.absMax(max: Int): Int {
     if (this.absoluteValue > max) {
@@ -68,24 +75,24 @@ fun findMissedTactics(game: LichessGame, eval: List<LichessEval>): List<Int> {
         val ev2 = eval[i + 2].eval.absMax(WINNING_THRESHOLD)
         val delta = ev1 - ev
         val delta2 = ev2 - ev1
-        val threshold2 = Math.abs(delta) * 0.66
+        val threshold2 = abs(delta) * 0.66
         logger.debug {
             val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else "   "}"
             "id=${game.id} move=$moveDisplay ev=$ev ev1=$ev1 ev2=$ev2 delta=$delta delta2=$delta2"
         }
         if (
         // Make sure the position is winning for us and not the opponent.
-        ev1.sign == (if (i % 2 == 0) 1 else -1) &&
-                // If the position has gone to a winning position.
-                Math.abs(eval[i + 1].eval) >= BLUNDER_THRESHOLD &&
-                // If the move was what brought it to the winning position.
-                Math.abs(delta) >= BLUNDER_THRESHOLD &&
-                // If the next move failed to take advantage of the position.
-                Math.abs(delta2) >= threshold2 &&
-                // Remove small relative differences (i.e. do not show 7.0 -> 10.0 eval changes)
-                Math.abs(delta) * 2 > Math.abs(ev1) &&
-                delta.sign != delta2.sign
-                ) {
+            ev1.sign == (if (i % 2 == 0) 1 else -1) &&
+            // If the position has gone to a winning position.
+            abs(eval[i + 1].eval) >= BLUNDER_THRESHOLD &&
+            // If the move was what brought it to the winning position.
+            abs(delta) >= BLUNDER_THRESHOLD &&
+            // If the next move failed to take advantage of the position.
+            abs(delta2) >= threshold2 &&
+            // Remove small relative differences (i.e. do not show 7.0 -> 10.0 eval changes)
+            abs(delta) * 2 > abs(ev1) &&
+            delta.sign != delta2.sign
+        ) {
             logger.debug { "Next move is missed tactic ->" }
             blunders.add(i)
         }
@@ -99,11 +106,11 @@ private val marshaller = context.getBean(PgnMarshaller::class.java)
 private val fenMarshaller = FenMarshallerImpl()
 
 fun getLatestPuzzles(userId: String? = null, limit: Int = 6, shuffle: Boolean = false): Map<String, Any> {
-    val puzzles = if (userId != null) {
-        dbPuzzles.find("{$or: [{userIdBlack: '$userId', orientation: 'black'}, {userIdWhite: '$userId', orientation: 'white'}]}")
-    } else {
-        dbPuzzles.find()
-    }.sort("{ added: -1 }").limit(limit)
+    val puzzles = if (userId != null)
+        jdbi.onDemand<PuzzleDao>().listByUser(userId, limit)
+    else
+        jdbi.onDemand<PuzzleDao>().list(limit)
+
     val boards = ArrayList<Map<String, Any>>()
     puzzles.toList().forEach { puzzle ->
         boards.add(puzzle.toMap())
@@ -113,325 +120,199 @@ fun getLatestPuzzles(userId: String? = null, limit: Int = 6, shuffle: Boolean = 
     return mapOf("boards" to boards, "num_tactics" to boards.size)
 }
 
-fun generateBoards(games: List<LichessGame>, user: String) {
+fun generateBoards(games: List<LichessGame>) {
     games.filter { game -> game.analysis != null }
-            .filter { game -> dbGames.count("{_id: '${game.id}'}") == 0L }
-            .forEach { game ->
-                val blunders = findMissedTactics(game, game.analysis!!)
-                var position = rules.initialPosition
-                val isWhite = (game.players["white"]?.user?.id?.toLowerCase() ?: "") == user
-                val color = if (isWhite) "white" else "black"
+        .filter { game -> jdbi.onDemand<GameDao>().count(game.id) == 0 }
+        .forEach { game ->
+            val blunders = findMissedTactics(game, game.analysis!!)
+            var position = rules.initialPosition
 
-                try {
-                    dbGames.save(Game(
-                            _id = game.id,
-                            createdAt = Instant.ofEpochMilli(game.createdAt)
-                    ))
-                } catch (ex: Exception) {
-                    println("ex = ${ex}")
-                }
+            try {
+                val g = Game(game.id, Instant.ofEpochMilli(game.createdAt))
+                jdbi.onDemand<GameDao>().insert(g)
+            } catch (ex: Exception) {
+                println("ex = $ex")
+            }
 
-                try {
-                    game.moves.split(" ").forEachIndexed { i, move ->
-                        val path = marshaller.convertPgnToMove(position, move)
-                        val updates = rules.getUpdatesForMove(position, path)
-                        val afterMove = ChessBoardModel()
-                        afterMove.setPosition(position)
-                        for (update in updates) {
-                            update.apply(afterMove)
+            try {
+                game.moves.split(" ").forEachIndexed { i, move ->
+                    val path = marshaller.convertPgnToMove(position, move)
+                    val updates = rules.getUpdatesForMove(position, path)
+                    val afterMove = ChessBoardModel()
+                    afterMove.setPosition(position)
+                    for (update in updates) {
+                        update.apply(afterMove)
+                    }
+                    afterMove.nextPlayerTurn()
+                    position = afterMove
+
+                    if (blunders.contains(i - 1)) {
+                        val fen = fenMarshaller.convertPositionToString(position)
+
+                        val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else ""} $move"
+
+                        try {
+                            val puzzle = Puzzle(
+                                id = "${game.id}_${i}",
+                                userIdWhite = game.players["white"]?.user?.id?.toLowerCase() ?: "",
+                                userIdBlack = game.players["black"]?.user?.id?.toLowerCase() ?: "",
+                                gameId = game.id,
+                                fen = fen,
+                                orientation = position.nextPlayerTurn.fullName,
+                                url = "https://lichess.org/${game.id}/${position.nextPlayerTurn.fullName}#${i + 1}",
+                                moveNumber = i + 1,
+                                moveDisplay = moveDisplay,
+                                moveSource = path.source.pgnCoordinates,
+                                moveDestination = path.destination.pgnCoordinates,
+                                created = Instant.now()
+                            )
+                            jdbi.onDemand<PuzzleDao>().insert(puzzle)
+                            logger.info { "generated puzzle ${game.id}_${i}" }
+                        } catch (ex: Exception) {
+                            println("ex = $ex")
                         }
-                        afterMove.nextPlayerTurn()
-                        position = afterMove
+                    }
+                }
+            } catch (ex: Exception) {
+                println(ex)
+            }
+        }
+}
 
-                        //val isMyBlunder = ((isWhite && i % 2 == 1) ||
-                        //        (!isWhite && i % 2 == 0))
+lateinit var jdbi: Jdbi
 
-                        //if (blunders.contains(i - 1) && isMyBlunder) {
-                        if (blunders.contains(i - 1)) {
-                            val fen = fenMarshaller.convertPositionToString(position)
+object Main {
+    @JvmStatic
+    fun main(args: Array<String>) {
+        Class.forName("org.sqlite.JDBC")
 
-                            val moveDisplay = "${i / 2 + 1}. ${if (i % 2 == 1) "..." else ""} $move"
+        val flyway = Flyway.configure().dataSource("jdbc:sqlite:file:./puzzles.db", null, null).load()
+        flyway.migrate()
 
-                            try {
-                                dbPuzzles.save(Puzzle(
-                                        _id = "${game.id}_${i}",
-                                        userIdWhite = game.players["white"]?.user?.id?.toLowerCase() ?: "",
-                                        userIdBlack = game.players["black"]?.user?.id?.toLowerCase() ?: "",
-                                        gameId = game.id,
-                                        fen = fen,
-                                        orientation = position.nextPlayerTurn.fullName,
-                                        url = "https://lichess.org/${game.id}/${position.nextPlayerTurn.fullName}#${i + 1}",
-                                        move_number = i + 1,
-                                        move_display = moveDisplay,
-                                        move_source = path.source.pgnCoordinates,
-                                        move_destination = path.destination.pgnCoordinates,
-                                        votes = 0,
-                                        added = Instant.now()
-                                ))
-                            } catch (ex: Exception) {
-                                println("ex = ${ex}")
+        jdbi = Jdbi.create("jdbc:sqlite:file:./puzzles.db")
+        jdbi.installPlugins()
+
+        val server = embeddedServer(
+            Netty,
+            port = 7000,
+            host = "127.0.0.1",
+            module = Application::mymodule
+        )
+
+        server.start(wait = false)
+    }
+}
+
+fun Application.mymodule() {
+    install(Mustache) {
+        mustacheFactory = com.github.mustachejava.DefaultMustacheFactory("templates")
+    }
+    install(io.ktor.features.ContentNegotiation) {
+        gson {
+            setPrettyPrinting()
+        }
+    }
+    install(CallLogging) {
+        level = Level.INFO
+        filter { call -> !call.request.path().startsWith("/static") }
+    }
+    val builder = GsonBuilder()
+    builder.registerTypeAdapter(LichessEval::class.java, EvalDeserializer())
+    val gson = builder.create()
+
+    routing {
+        static("/static") {
+            resources("static")
+        }
+        get("/") {
+            val data = getLatestPuzzles()
+            call.respond(MustacheContent("index.mustache", data))
+        }
+
+        get("/view") {
+            val userId = call.parameters["q"]?.toLowerCase() ?: ""
+            if (userId.isEmpty()) {
+                call.respondRedirect("/")
+                return@get
+            }
+            val fmt = call.parameters["fmt"] ?: ""
+            val data = mutableMapOf<String, Any>("userId" to userId)
+            data += getLatestPuzzles(userId, limit = 100, shuffle = true)
+            data["userIdEnc"] = URLEncoder.encode(userId, "UTF-8")
+            if (fmt == "txt")
+                call.respond(MustacheContent("search-txt.mustache", data))
+            else
+                call.respond(MustacheContent("search.mustache", data))
+        }
+
+        get("/search") {
+            val userId = call.parameters["q"]?.toLowerCase() ?: ""
+            if (userId.isEmpty()) {
+                call.respondRedirect("/")
+                return@get
+            }
+
+            val userDao = jdbi.onDemand<UserDao>()
+            val user = userDao.findOne(userId) ?: {
+                val u = User(id = userId)
+                userDao.insert(u)
+                u
+            }()
+
+            val enc = URLEncoder.encode(userId, "UTF-8")
+            val data = mutableMapOf<String, Any>("userId" to userId, "userIdEnc" to enc)
+
+            if (!user.fetching && user.lastFetched.plusSeconds(10) < Instant.now()) {
+                logger.info { "search $userId: user=$user start fetching" }
+                userDao.update(user.copy(fetching = true))
+                try {
+                    val url =
+                        "https://lichess.org/games/export/$enc?max=20&analysed=true&moves=true&evals=true&perfType=blitz,rapid,classical,correspondence"
+                    logger.info { "search $userId: starting fetch for url=$url" }
+                    // lichess can take a while to respond to this query
+                    val result = withTimeout(240_000) {
+                        HttpClient(CIO).use { client ->
+                            client.get<HttpResponse>(url) {
+                                header("accept", "application/x-ndjson")
                             }
                         }
                     }
-                } catch (ex: Exception) {
-                    println(ex)
-                }
-            }
-}
-
-fun getStandardData(ctx: Context): MutableMap<String, Any> {
-    val data = mutableMapOf<String, Any>()
-    val session = ctx.request().getSession(false)
-    session?.getAttribute("userId")?.let { userId ->
-        data["userId"] = userId
-        data["loggedIn"] = true
-    }
-    return data
-}
-
-object Main {
-
-    @JvmStatic
-    fun main(args: Array<String>) {
-        //val lichessId = System.getenv("LICHESS_ID") ?: error("Environment variable LICHESS_ID not set!")
-        //val lichessKey = System.getenv("LICHESS_KEY") ?: error("Environment variable LICHESS_KEY not set!")
-        val lichessId = "asdf"
-        val lichessKey = "asdf"
-
-        val builder = GsonBuilder()
-        builder.registerTypeAdapter(LichessEval::class.java, EvalDeserializer())
-        val gson = builder.create()
-
-        val app = Javalin.create()
-        app.port(7000)
-        app.enableStaticFiles("static", Location.EXTERNAL)
-        app.enableStandardRequestLogging()
-        //app.requestLogLevel(LogLevel.EXTENSIVE)
-        app.get("/") { ctx ->
-            val data = getStandardData(ctx)
-            data += getLatestPuzzles()
-            ctx.renderMustache("templates/index.mustache", data)
-        }
-
-        //app.get("/search") { ctx ->
-        //    val q = ctx.queryParam("q") ?: ""
-        //    val nb = ctx.queryParam("nb") ?: "25"
-        //    val type = ctx.queryParam("type") ?: ""
-        //    val time = ctx.queryParams("time") ?: arrayOf("blitz", "rapid", "classical", "correspondence")
-        //    if (q.isEmpty()) {
-        //        ctx.redirect("/")
-        //    } else {
-        //        try {
-        //            val n = Math.min(nb.toIntOrNull() ?: 25, 100)
-
-        //            //val request = OAuthRequest(Verb.GET, "https://lichess.org/games/export/${URLEncoder.encode(userId, "UTF-8")}?max=20&analysed=true&moves=true&evals=true&perfType=blitz,rapid,classical,correspondence")
-        //            val url = "https://lichess.org/games/export/${URLEncoder.encode(q.trim(), "UTF-8")}?max=$n&analysed=true&moves=true&evals=true&perfType=${time.joinToString(",")}"
-
-        //            //request.headers["accept"] = "application/x-ndjson"
-        //            val get = url.httpGet()
-        //            get.headers["accept"] = "application/x-ndjson"
-        //            val (_, _, result) = get.responseString()
-        //            //val games = gson.fromJson(result.get(), LichessGames::class.java)
-        //            val games = result.get().trim().split("\n").map { gson.fromJson(it, LichessGame::class.java) }
-        //            generateBoards(games, q)
-        //            val data = getLatestPuzzles(q, limit = 100, shuffle = true)
-        //            if (type == "txt") {
-        //                ctx.renderMustache("templates/search-txt.mustache", data)
-        //            } else {
-        //                ctx.renderMustache("templates/search.mustache", data)
-        //            }
-        //        } catch (ex: Exception) {
-        //            ctx.status(500)
-        //            ctx.result("There was an error. Make sure you typed your username correctly!\nError: " + ex.toString())
-        //        }
-        //    }
-        //}
-
-        val state = "secret" + Random().nextInt(999_999)
-        val service = ServiceBuilder(lichessId)
-                .apiSecret(lichessKey)
-                .state(state)
-                .scope("game:read")
-                .callback("http://localhost:7000/callback")
-                .build(LichessApi)
-
-        app.get("/logout") { ctx ->
-            ctx.request().session.invalidate()
-            ctx.redirect("/")
-        }
-
-        app.get("/login") { ctx ->
-            val requestToken = service.authorizationUrl
-            println("requestToken = ${requestToken}")
-            ctx.redirect(requestToken)
-        }
-
-        app.get("/callback") { ctx ->
-            val code = ctx.queryParam("code")!!
-            val accessToken = service.getAccessToken(code)
-            println("accessToken = ${accessToken}")
-            println("accessToken.rawResponse = ${accessToken.rawResponse}")
-            println("accessToken.json = ${accessToken.json}")
-
-            val session = ctx.request().session
-            session.setAttribute("accessToken", accessToken.accessToken)
-            session.setAttribute("refreshToken", accessToken.refreshToken)
-            session.setAttribute("expiration", LocalTime.now().plusSeconds(accessToken.expiresIn.toLong()))
-
-            //val expiration = session.getAttribute("expiration") as LocalTime
-            //if (LocalTime.now().minusMinutes(5) > expiration) {
-            //    val newToken = service.refreshAccessToken(accessToken.refreshToken)
-            //    println("newToken = ${newToken}")
-            //}
-
-            val request = OAuthRequest(Verb.GET, "https://lichess.org/api/account")
-            service.signRequest(accessToken, request)
-            val response = service.execute(request)
-            val user = gson.fromJson(response.body, LichessUser::class.java)
-            println("response.body = ${response.body}")
-            println("user = ${user}")
-            session.setAttribute("userId", user.id)
-
-//            val stmt = db.prepareStatement("insert into sessions (access_token, refresh_token, expiration) values (?, ?, ?)")
-//            stmt.setString(1, accessToken.accessToken)
-//            stmt.setString(2, accessToken.refreshToken)
-//            stmt.setInt(3, accessToken.expiresIn)
-//            stmt.executeUpdate()
-
-            ctx.redirect("/")
-        }
-
-        app.get("/search") { ctx ->
-            val userId = ctx.queryParam("q")?.toLowerCase() ?: ""
-            if (userId.isEmpty()) {
-                ctx.redirect("/")
-                throw HaltException("redirect")
-            }
-
-            //val session = ctx.request().getSession(false)
-
-            //if (session == null) {
-            //    ctx.redirect("/")
-            //}
-
-            val data = getStandardData(ctx)
-
-            //val userId = ctx.sessionAttribute("userId") as String
-            //val userId = q
-
-            val user = dbUsers.findOneById(userId) ?: User(_id = userId)
-
-            if (!user.fetching && user.lastFetched.plusSeconds(300) < Instant.now()) {
-                logger.info { "search: user=$user start fetching" }
-                dbUsers.updateOne(user.copy(fetching = true), upsert())
-                thread(start = true, name = "fetch ${user._id}") {
-                    try {
-                        //val accessToken = OAuth2AccessToken(session.getAttribute("accessToken") as String)
-                        //val request = OAuthRequest(Verb.GET, "https://lichess.org/games/export/${URLEncoder.encode(userId, "UTF-8")}?max=10&analysed=true&moves=true&evals=true&perfType=blitz,rapid,classical,correspondence")
-                        //request.headers["accept"] = "application/x-ndjson"
-                        //service.signRequest(accessToken, request)
-                        //logger.info { "fetchnew: starting fetch for user=$user" }
-                        //val response = service.execute(request)
-                        //logger.info { "fetchnew: finished fetch for user=$user" }
-                        //val games = response.body.trim().split("\n").map { gson.fromJson(it, LichessGame::class.java) }
-                        //generateBoards(games, user._id)
-
-                        val url = "https://lichess.org/games/export/${URLEncoder.encode(userId, "UTF-8")}?max=20&analysed=true&moves=true&evals=true&perfType=blitz,rapid,classical,correspondence"
-                        val get = url.httpGet()
-                                .header("accept" to "application/x-ndjson")
-                                .timeout(60_000)
-                                .timeoutRead(60_000)
-                        logger.info { "fetchnew: starting fetch for user=$user url=$url" }
-                        val (_, _, result) = get.responseString()
-                        logger.info { "fetchnew: finished fetch for user=$user" }
-                        logger.debug { "result=$result" }
-                        val games = result.get().trim().split("\n").map { gson.fromJson(it, LichessGame::class.java) }
-                        generateBoards(games, user._id)
-                    } finally {
-                        dbUsers.updateOne(user.copy(fetching = false, lastFetched = Instant.now()))
+                    logger.info { "search $userId: ${result.status}" }
+                    when (result.status) {
+                        HttpStatusCode.OK -> {
+                            val games = result.readText().trim().split("\n")
+                                .map { gson.fromJson(it, LichessGame::class.java) }.filterNotNull()
+                            generateBoards(games)
+                        }
+                        HttpStatusCode.NotFound -> {
+                            data["error"] =
+                                "Failed to fetch games from Lichess. Username not found. Please check your spelling."
+                        }
+                        else -> {
+                            data["error"] = "Failed to fetch games from Lichess. ${result.status}"
+                        }
                     }
+                } catch (timeout: TimeoutCancellationException) {
+                    logger.info { "search $userId: timed out" }
+                    data["error"] = "Failed to fetch games from Lichess. Timed out."
+                } catch (ex: java.lang.Exception) {
+                    logger.info { "search $userId: exception: $ex" }
+                    ex.printStackTrace()
+                    data["error"] = "Failed to fetch games from Lichess. $ex"
+                } finally {
+                    logger.info { "search $userId: updating user=$user" }
+                    userDao.update(user.copy(fetching = false, lastFetched = Instant.now()))
                 }
-                ctx.renderMustache("templates/fetching.mustache", data)
-            } else if (user.fetching) {
-                logger.info { "search: user=$user still fetching" }
-                ctx.renderMustache("templates/fetching.mustache", data)
-            } else {
-                logger.info { "search: user=$user NOT fetching" }
                 data += getLatestPuzzles(userId, limit = 100, shuffle = true)
-//                ctx.redirect("/fetchnew?q=${URLEncoder.encode(userId, "UTF-8")}")
-                ctx.renderMustache("templates/search.mustache", data)
-            }
-        }
-
-        app.get("/fetchnew") { ctx ->
-            val session = ctx.request().getSession(false)
-            if (session == null) {
-                ctx.redirect("/")
-                throw HaltException("redirect")
-            }
-
-            val data = getStandardData(ctx)
-            val userId = session.getAttribute("userId") as String
-//            val userId = ctx.queryParam("q") ?: ""
-//            if (userId.isEmpty()) {
-//                ctx.redirect("/")
-//                throw HaltException("redirect")
-//            }
-            data += getLatestPuzzles(userId, limit = 100, shuffle = true)
-
-            ctx.renderMustache("templates/search.mustache", data)
-        }
-
-        app.get("/shuffle") { ctx ->
-            val session = ctx.request().getSession(false)
-            if (session == null) {
-                ctx.redirect("/")
-                throw HaltException("redirect")
-            }
-
-            val data = getStandardData(ctx)
-            val userId = session.getAttribute("userId") as String
-            data += getLatestPuzzles(userId, limit = 100, shuffle = true)
-
-            ctx.renderMustache("templates/search.mustache", data)
-        }
-
-        app.get("/vote") { ctx ->
-            //val session = ctx.request().getSession(false) ?: throw HaltException(401, "Must be logged in!")
-            //println("session = ${session}")
-            //val userId = session.getAttribute("userId") as String
-            val userId = "nathanj439"
-            val id = ctx.queryParam("id") ?: throw HaltException("bad request: no id")
-            val dir = ctx.queryParam("dir") ?: throw HaltException("bad request: no dir")
-            val up = dir == "up"
-
-//            val v = Vote(
-//                    _id = id,
-//                    userId = userId,
-//                    up = dir == "up"
-//            )
-            logger.info { "VOTE: userId=$userId votes for id=$id dir=$dir" }
-            //voteCol.updateOne(v, UpdateOptions().upsert(true))
-
-            val incBy = if (up) 1 else -1
-
-            val v = dbVotes.findOne(Vote::userId eq userId, Vote::boardId eq id)
-            val multiple = if (v != null && v.up != up) {
-                dbVotes.updateOne(v.copy(up = up))
-                2
+                call.respond(MustacheContent("search.mustache", data))
+            } else if (user.fetching) {
+                logger.info { "search $userId: still fetching ???" }
+                call.respondRedirect("/")
             } else {
-                dbVotes.insertOne(Vote(
-                        boardId = id,
-                        userId = userId,
-                        up = up
-                ))
-                1
+                logger.info { "search $userId: NOT fetching" }
+                data += getLatestPuzzles(userId, limit = 100, shuffle = true)
+                call.respond(MustacheContent("search.mustache", data))
             }
-
-            // Adjust puzzle.votes
-            dbPuzzles.updateOneById(id, inc(Puzzle::votes, incBy * multiple))
         }
-
-        app.start()
     }
 }

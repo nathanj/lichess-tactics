@@ -1,0 +1,15 @@
+{{<super}}
+
+{{$content}}
+
+    {{#error}}
+        <h2><span class="label error">Error: {{error}}</span></h2>
+    {{/error}}
+
+{{> puzzles}}
+
+<a href="/view?q={{&userIdEnc}}&fmt=txt">Export puzzles as FEN</a>
+
+{{/content}}
+
+{{/super}}

@@ -1,12 +1,12 @@
 package com.github.nathanj.lichess
 
-import com.github.scribejava.core.builder.api.DefaultApi20
 import com.google.gson.JsonDeserializationContext
 import com.google.gson.JsonDeserializer
 import com.google.gson.JsonElement
 import java.lang.reflect.Type
 import kotlin.math.sign
 
+/*
 object LichessApi : DefaultApi20() {
     override fun getAuthorizationBaseUrl(): String {
         return "https://oauth.lichess.org/oauth/authorize"
@@ -16,6 +16,7 @@ object LichessApi : DefaultApi20() {
         return "https://oauth.lichess.org/oauth"
     }
 }
+// */
 
 data class LichessEval(
         val eval: Int
